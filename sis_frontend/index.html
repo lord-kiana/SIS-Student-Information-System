@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>SIS - Students</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; background-color: #fff; color: #000; }
+    h2 { color: #1a73e8; margin-bottom: 12px; }
+    .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
+    input, button { padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; }
+    button { background-color: #1a73e8; color: #fff; border: none; cursor: pointer; }
+    button:hover { background-color: #1558b0; }
+    table { border-collapse: collapse; width: 100%; margin-top: 14px; }
+    th, td { border: 1px solid #eee; padding: 10px; text-align: left; vertical-align: middle; }
+    th { background: #f6f8fb; }
+    .muted { color: #666; font-size: 13px; }
+    .actions { display: flex; gap: 6px; }
+    .error { background: #ffe8e8; color: #a40000; padding: 8px; border: 1px solid #ffb3b3; border-radius: 4px; margin-top: 10px; display:none; }
+    .success { background: #e9f7ef; color: #1b5e20; padding: 8px; border: 1px solid #a5d6a7; border-radius: 4px; margin-top: 10px; display:none; }
+  </style>
+</head>
+<body>
+  <h2>Student Information System</h2>
+
+  <!-- Adjust the port if needed -->
+  <script>const API = "http://localhost:3000/api/students";</script>
+
+  <!-- Search -->
+  <div class="row">
+    <input id="search" placeholder="Search by name..." />
+    <button id="btnClearSearch" onclick="clearSearch()">Clear</button>
+  </div>
+
+  <!-- Form -->
+  <div class="row">
+    <input id="name" placeholder="Name" />
+    <input id="course" placeholder="Course" />
+    <input id="year" placeholder="Year" />
+    <input id="grade" placeholder="Grade" />
+    <button id="btnSubmit" onclick="submitForm()">Add</button>
+    <button id="btnCancel" onclick="resetForm()" style="display:none;">Cancel</button>
+  </div>
+
+  <div id="msgError" class="error"></div>
+  <div id="msgSuccess" class="success"></div>
+
+  <table id="studentsTable">
+    <thead>
+      <tr>
+        <th>#</th>
+        <th>Name</th>
+        <th>Course</th>
+        <th>Year</th>
+        <th>Grade</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody></tbody>
+  </table>
+
+  <script>
+    let editingId = null; // null = Add mode; number = Update mode
+    const errorBox = document.getElementById("msgError");
+    const successBox = document.getElementById("msgSuccess");
+    const searchInput = document.getElementById("search");
+    let debounceTimer = null;
+
+    function showError(msg) {
+      errorBox.textContent = msg;
+      errorBox.style.display = "block";
+      successBox.style.display = "none";
+    }
+    function showSuccess(msg) {
+      successBox.textContent = msg;
+      successBox.style.display = "block";
+      errorBox.style.display = "none";
+      setTimeout(() => { successBox.style.display = "none"; }, 1800);
+    }
+
+    async function fetchStudents(q = "") {
+      try {
+        const url = q ? `${API}?q=${encodeURIComponent(q)}` : API;
+        const res = await fetch(url);
+        if (!res.ok) throw new Error(`GET failed: ${res.status} ${res.statusText}`);
+        const data = await res.json();
+        renderTable(data);
+      } catch (e) {
+        showError(e.message);
+        console.error(e);
+      }
+    }
+
+    function renderTable(students) {
+      const tbody = document.querySelector("#studentsTable tbody");
+      tbody.innerHTML = "";
+      students.forEach((s) => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${s.id}</td>
+          <td>${escapeHtml(s.name)}</td>
+          <td>${escapeHtml(s.course)}</td>
+          <td>${escapeHtml(s.year)}</td>
+          <td>${escapeHtml(s.grade)}</td>
+          <td class="actions">
+            <button onclick="startEdit(${s.id}, '${escapeAttr(s.name)}', '${escapeAttr(s.course)}', '${escapeAttr(s.year)}', '${escapeAttr(s.grade)}')">Edit</button>
+            <button onclick="deleteStudent(${s.id})">Delete</button>
+          </td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // Form submit (Add or Update)
+    async function submitForm() {
+      const name   = document.getElementById("name").value.trim();
+      const course = document.getElementById("course").value.trim();
+      const year   = document.getElementById("year").value.trim();
+      const grade  = document.getElementById("grade").value.trim();
+
+      if (!name || !course || !year || !grade) {
+        showError("Please fill in all fields.");
+        return;
+      }
+
+      try {
+        let res, data;
+        if (editingId === null) {
+          // Add
+          res = await fetch(API, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, course, year, grade })
+          });
+        } else {
+          // Update
+          res = await fetch(`${API}/${editingId}`, {
+            method: "PUT",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ name, course, year, grade })
+          });
+        }
+        data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+
+        showSuccess(editingId === null ? "Student added." : "Student updated.");
+        resetForm();
+        fetchStudents(searchInput.value.trim());
+      } catch (e) {
+        showError(e.message);
+        console.error(e);
+      }
+    }
+
+    function startEdit(id, name, course, year, grade) {
+      editingId = id;
+      document.getElementById("name").value = decodeHtml(name);
+      document.getElementById("course").value = decodeHtml(course);
+      document.getElementById("year").value = decodeHtml(year);
+      document.getElementById("grade").value = decodeHtml(grade);
+      document.getElementById("btnSubmit").textContent = "Update";
+      document.getElementById("btnCancel").style.display = "inline-block";
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    }
+
+    function resetForm() {
+      editingId = null;
+      document.getElementById("name").value = "";
+      document.getElementById("course").value = "";
+      document.getElementById("year").value = "";
+      document.getElementById("grade").value = "";
+      document.getElementById("btnSubmit").textContent = "Add";
+      document.getElementById("btnCancel").style.display = "none";
+    }
+
+    async function deleteStudent(id) {
+      if (!confirm("Delete this student?")) return;
+      try {
+        const res = await fetch(`${API}/${id}`, { method: "DELETE" });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        showSuccess("Student deleted.");
+        if (editingId === id) resetForm();
+        fetchStudents(searchInput.value.trim());
+      } catch (e) {
+        showError(e.message);
+        console.error(e);
+      }
+    }
+
+    // Search handlers (debounced)
+    searchInput.addEventListener("input", () => {
+      clearTimeout(debounceTimer);
+      debounceTimer = setTimeout(() => {
+        const q = searchInput.value.trim();
+        fetchStudents(q);
+      }, 250);
+    });
+
+    function clearSearch() {
+      searchInput.value = "";
+      fetchStudents("");
+    }
+
+    // Helpers
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+    function escapeAttr(str) { return escapeHtml(str).replace(/"/g, "&quot;"); }
+    function decodeHtml(str) {
+      const txt = document.createElement("textarea");
+      txt.innerHTML = str;
+      return txt.value;
+    }
+
+    // Initial load
+    fetchStudents();
+  </script>
+</body>
+</html>
