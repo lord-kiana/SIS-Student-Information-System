@@ -32,16 +32,6 @@ app.get("/", (_req, res) => {
   res.send("Welcome to the Student Information System API");
 });
 
-// Get student info by name
-app.get("/api/students/name/:name", (req, res) => {
-  const name = req.params.name;
-  const sql = "SELECT * FROM students WHERE name = ?";
-  db.query(sql, [name], (err, results) => {
-    if (err) return res.status(500).json({ error: "Database error" });
-    if (results.length === 0) return res.status(404).json({ error: "Student not found" });
-    res.json(results[0]); // return the first match
-  });
-});
 
 
 // ===============================

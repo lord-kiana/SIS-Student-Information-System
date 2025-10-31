@@ -2,78 +2,56 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Student Dashboard</title>
+  <title>SIS | Student Dashboard</title>
   <style>
     body { font-family: Arial, sans-serif; margin: 20px; background: #f5f7fb; }
     h1 { color: #1a73e8; }
-    input { padding: 6px; width: 200px; margin-bottom: 10px; }
-    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
     th, td { border: 1px solid #ddd; padding: 8px; text-align: left; }
     th { background: #1a73e8; color: white; }
-    button { background: #1a73e8; color: white; border: none; cursor: pointer; border-radius: 5px; padding: 6px 12px; }
-    button:hover { background: #1558b0; }
   </style>
 </head>
 <body>
   <h1>Student Dashboard</h1>
   <button onclick="logout()">Logout</button>
 
-  <h2>All Students</h2>
-  <input id="searchInput" placeholder="Search by name" oninput="fetchStudents()">
-
-  <table id="studentTable">
+  <table id="studentInfo">
     <thead>
-      <tr>
-        <th>ID</th><th>Name</th><th>Course</th><th>Year</th><th>Grade</th>
-      </tr>
+      <tr><th>ID</th><th>Name</th><th>Course</th><th>Year</th><th>Grade</th></tr>
     </thead>
     <tbody></tbody>
   </table>
 
   <script>
+    const user = JSON.parse(localStorage.getItem("loggedInUser"));
     const API = "http://localhost:3000/api";
+
+    async function fetchStudent() {
+      const res = await fetch(`${API}/students`);
+      const data = await res.json();
+      const tbody = document.querySelector("#studentInfo tbody");
+      tbody.innerHTML = "";
+
+      // for now just show all students (optional: filter by logged-in student)
+      data.forEach(s => {
+        tbody.innerHTML += `
+          <tr>
+            <td>${s.id}</td>
+            <td>${s.name}</td>
+            <td>${s.course}</td>
+            <td>${s.year}</td>
+            <td>${s.grade}</td>
+          </tr>
+        `;
+      });
+    }
 
     function logout() {
       localStorage.removeItem("loggedInUser");
       window.location.href = "./login.html";
     }
 
-    async function fetchStudents() {
-      const query = document.getElementById("searchInput").value.trim();
-      const url = query ? `${API}/students?q=${encodeURIComponent(query)}` : `${API}/students`;
-
-      try {
-        const res = await fetch(url);
-        if (!res.ok) throw new Error("Failed to fetch students");
-        const data = await res.json();
-
-        const tbody = document.querySelector("#studentTable tbody");
-        tbody.innerHTML = "";
-
-        data.forEach(s => {
-          tbody.innerHTML += `
-            <tr>
-              <td>${s.id}</td>
-              <td>${s.name}</td>
-              <td>${s.course}</td>
-              <td>${s.year}</td>
-              <td>${s.grade}</td>
-            </tr>
-          `;
-        });
-      } catch (err) {
-        alert(err.message);
-      }
-    }
-
-    window.onload = function() {
-      const user = JSON.parse(localStorage.getItem("loggedInUser"));
-      if (!user) {
-        window.location.href = "./login.html";
-        return;
-      }
-      fetchStudents();
-    }
+    fetchStudent();
   </script>
 </body>
 </html>
