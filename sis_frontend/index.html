@@ -25,9 +25,7 @@
     h2 { color: var(--primary); margin-bottom: 12px; }
     h3 { color: var(--primary); margin: 24px 0 8px; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-    input, button, select {
-      padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px;
-    }
+    input, button, select { padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; }
     button { background: var(--primary); color: #fff; border: none; cursor: pointer; }
     button:hover { background: var(--primary-hover); }
     button[disabled] { opacity: .6; cursor: not-allowed; }
@@ -49,7 +47,7 @@
   <h2>Student Information System <span class="pill" id="envPill">Local</span></h2>
   <p class="muted">Add, update, delete, and search students. Role-based access: admins do everything; students see their own record.</p>
 
-  <!-- === CONFIG: adjust if your API host/port differs === -->
+  <!-- Config -->
   <script>
     const API = "http://localhost:3000/api";
   </script>
@@ -152,9 +150,9 @@
   </div>
 
   <script>
-    // ======== State & helpers ========
-    let token = localStorage.getItem("token");
-    let role  = localStorage.getItem("role");
+    // ======== State & helpers (in-memory token only) ========
+    let token = null;   // never stored in localStorage
+    let role  = null;
     let debounceTimer = null;
     let editingId = null;
 
@@ -174,6 +172,11 @@
       setTimeout(() => { successBox.style.display = "none"; }, 1800);
     }
 
+    function getCookie(name) {
+      const m = document.cookie.match(new RegExp("(^|; )" + name.replace(/([.$?*|{}()\\[\\]\\\\\\/\\+^])/g, '\\$1') + "=([^;]*)"));
+      return m ? decodeURIComponent(m[2]) : null;
+    }
+
     function escapeHtml(str) {
       return String(str ?? "")
         .replace(/&/g, "&amp;")
@@ -189,19 +192,23 @@
 
     async function apiFetch(url, options = {}) {
       const headers = { ...(options.headers || {}), ...authHeaders() };
-      // include credentials so refresh cookie can be exchanged
       return fetch(url, { ...options, headers, credentials: "include" });
     }
 
     async function refreshTokenIfNeeded(res) {
       if (res.status !== 401) return false;
-      const r = await fetch(`${API}/auth/refresh`, { method: "POST", credentials: "include" });
-      const data = await r.json().catch(() => ({}));
-      if (!r.ok) return false;
-      token = data.token; role = data.role;
-      localStorage.setItem("token", token);
-      localStorage.setItem("role", role);
-      return true;
+      try {
+        const csrf = getCookie("csrf_refresh") || "";
+        const r = await fetch(`${API}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "x-csrf-refresh": csrf }
+        });
+        const data = await r.json().catch(() => ({}));
+        if (!r.ok) return false;
+        token = data.token; role = data.role;
+        return true;
+      } catch { return false; }
     }
 
     async function withAutoRefresh(fn) {
@@ -218,6 +225,22 @@
       document.getElementById("adminAuditSection").style.display = role === "admin" ? "block" : "none";
     }
 
+    async function silentRefresh() {
+      try {
+        const csrf = getCookie("csrf_refresh") || "";
+        const r = await fetch(`${API}/auth/refresh`, {
+          method: "POST",
+          credentials: "include",
+          headers: { "x-csrf-refresh": csrf }
+        });
+        if (!r.ok) return false;
+        const data = await r.json();
+        token = data.token; role = data.role;
+        document.getElementById("whoami").textContent = `Signed in (${role})`;
+        return true;
+      } catch { return false; }
+    }
+
     // ======== Auth ========
     async function login() {
       try {
@@ -232,8 +255,6 @@
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || "Login failed");
         token = data.token; role = data.role;
-        localStorage.setItem("token", token);
-        localStorage.setItem("role", role);
         document.getElementById("whoami").textContent = `Signed in as ${email} (${role})`;
         showSuccess("Logged in.");
         refreshView();
@@ -241,10 +262,8 @@
     }
 
     async function logout() {
-      try { await apiFetch(`${API}/auth/logout`, { method: "POST" }); } catch {}
+      try { await fetch(`${API}/auth/logout`, { method: "POST", credentials: "include" }); } catch {}
       token = null; role = null;
-      localStorage.removeItem("token");
-      localStorage.removeItem("role");
       document.getElementById("whoami").textContent = "";
       showSuccess("Logged out.");
       refreshView();
@@ -474,7 +493,6 @@
       });
     }
 
-    // ======== Audit Logs ========
     async function loadAuditLogs() {
       if (role !== "admin") return;
       const res = await withAutoRefresh(() => apiFetch(`${API}/admin/audit-logs?limit=50&page=1`));
@@ -497,7 +515,6 @@
       });
     }
 
-    // ======== Orchestration ========
     function refreshView() {
       updateRoleUI();
       fetchStudents(searchInput.value.trim());
@@ -506,15 +523,11 @@
       loadStudentsForBinding();
     }
 
-    // init
-    (function init(){
-      if (token && role) {
-        document.getElementById("btnLogout").style.display = "inline-block";
-        document.getElementById("whoami").textContent = `Signed in (${role})`;
-      }
-      // mark env pill (just cosmetic)
+    (async function init(){
       const envPill = document.getElementById("envPill");
       envPill.textContent = location.hostname === "localhost" ? "Local" : "Remote";
+      await silentRefresh(); // try to hydrate access token on load
+      updateRoleUI();
       refreshView();
     })();
   </script>
