@@ -3,67 +3,164 @@
 <head>
   <meta charset="UTF-8" />
   <title>SIS - Students</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <style>
-    body { font-family: Arial, sans-serif; margin: 20px; background-color: #fff; color: #000; }
-    h2 { color: #1a73e8; margin-bottom: 12px; }
+    :root {
+      --primary: #1a73e8;
+      --primary-hover: #1558b0;
+      --bg: #fff;
+      --text: #000;
+      --muted: #666;
+      --table-border: #eee;
+      --table-head: #f6f8fb;
+      --success-bg: #e9f7ef;
+      --success-text: #1b5e20;
+      --success-border: #a5d6a7;
+      --error-bg: #ffe8e8;
+      --error-text: #a40000;
+      --error-border: #ffb3b3;
+    }
+    * { box-sizing: border-box; }
+    body { font-family: Arial, sans-serif; margin: 20px; background: var(--bg); color: var(--text); }
+    h2 { color: var(--primary); margin-bottom: 12px; }
+    h3 { color: var(--primary); margin: 24px 0 8px; }
     .row { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 10px; }
-    input, button { padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px; }
-    button { background-color: #1a73e8; color: #fff; border: none; cursor: pointer; }
-    button:hover { background-color: #1558b0; }
+    input, button, select {
+      padding: 8px; border-radius: 4px; border: 1px solid #ddd; font-size: 14px;
+    }
+    button { background: var(--primary); color: #fff; border: none; cursor: pointer; }
+    button:hover { background: var(--primary-hover); }
+    button[disabled] { opacity: .6; cursor: not-allowed; }
     table { border-collapse: collapse; width: 100%; margin-top: 14px; }
-    th, td { border: 1px solid #eee; padding: 10px; text-align: left; vertical-align: middle; }
-    th { background: #f6f8fb; }
-    .muted { color: #666; font-size: 13px; }
+    th, td { border: 1px solid var(--table-border); padding: 10px; text-align: left; vertical-align: middle; }
+    th { background: var(--table-head); }
+    .muted { color: var(--muted); font-size: 13px; }
     .actions { display: flex; gap: 6px; }
-    .error { background: #ffe8e8; color: #a40000; padding: 8px; border: 1px solid #ffb3b3; border-radius: 4px; margin-top: 10px; display:none; }
-    .success { background: #e9f7ef; color: #1b5e20; padding: 8px; border: 1px solid #a5d6a7; border-radius: 4px; margin-top: 10px; display:none; }
+    .error { background: var(--error-bg); color: var(--error-text); padding: 8px; border: 1px solid var(--error-border); border-radius: 4px; margin-top: 10px; display:none; }
+    .success { background: var(--success-bg); color: var(--success-text); padding: 8px; border: 1px solid var(--success-border); border-radius: 4px; margin-top: 10px; display:none; }
+    .card { border: 1px solid #eee; border-radius: 6px; padding: 12px; margin: 10px 0 0; }
+    .grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit,minmax(220px,1fr)); }
+    hr { border: none; border-top: 1px solid #eee; margin: 20px 0; }
+    .section { margin-top: 20px; }
+    .pill { font-size: 12px; padding: 3px 8px; border-radius: 12px; background: #eef3fd; color: #2759c9; }
   </style>
 </head>
 <body>
-  <h2>Student Information System</h2>
+  <h2>Student Information System <span class="pill" id="envPill">Local</span></h2>
+  <p class="muted">Add, update, delete, and search students. Role-based access: admins do everything; students see their own record.</p>
 
-  <!-- Adjust the port if needed -->
-  <script>const API = "http://localhost:3000/api/students";</script>
+  <!-- === CONFIG: adjust if your API host/port differs === -->
+  <script>
+    const API = "http://localhost:3000/api";
+  </script>
 
-  <!-- Search -->
-  <div class="row">
-    <input id="search" placeholder="Search by name..." />
-    <button id="btnClearSearch" onclick="clearSearch()">Clear</button>
-  </div>
-
-  <!-- Form -->
-  <div class="row">
-    <input id="name" placeholder="Name" />
-    <input id="course" placeholder="Course" />
-    <input id="year" placeholder="Year" />
-    <input id="grade" placeholder="Grade" />
-    <button id="btnSubmit" onclick="submitForm()">Add</button>
-    <button id="btnCancel" onclick="resetForm()" style="display:none;">Cancel</button>
-  </div>
-
+  <!-- Alerts -->
   <div id="msgError" class="error"></div>
   <div id="msgSuccess" class="success"></div>
 
-  <table id="studentsTable">
-    <thead>
-      <tr>
-        <th>#</th>
-        <th>Name</th>
-        <th>Course</th>
-        <th>Year</th>
-        <th>Grade</th>
-        <th>Actions</th>
-      </tr>
-    </thead>
-    <tbody></tbody>
-  </table>
+  <!-- Auth -->
+  <div class="card">
+    <h3>Sign in</h3>
+    <div class="row">
+      <input id="email" placeholder="Email" />
+      <input id="password" placeholder="Password" type="password" />
+      <button id="btnLogin" onclick="login()">Login</button>
+      <button id="btnLogout" onclick="logout()" style="display:none;">Logout</button>
+      <span id="whoami" class="muted"></span>
+    </div>
+    <p class="muted">Tip: Use <code>admin@sis.local / Admin#12345</code> or <code>student1@sis.local / Student#12345</code> if you ran the seed.</p>
+  </div>
+
+  <!-- Students -->
+  <div class="section">
+    <h3>Students</h3>
+    <div class="row">
+      <input id="search" placeholder="Search by name..." />
+      <button id="btnClearSearch" onclick="clearSearch()">Clear</button>
+    </div>
+
+    <div class="row" id="studentFormRow">
+      <input id="name" placeholder="Name" />
+      <input id="course" placeholder="Course" />
+      <input id="year" placeholder="Year" />
+      <input id="grade" placeholder="Grade" />
+      <button id="btnSubmit" onclick="submitForm()">Add</button>
+      <button id="btnCancel" onclick="resetForm()" style="display:none;">Cancel</button>
+    </div>
+
+    <table id="studentsTable">
+      <thead>
+        <tr>
+          <th>#</th>
+          <th>Name</th>
+          <th>Course</th>
+          <th>Year</th>
+          <th>Grade</th>
+          <th>Actions</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
+
+  <!-- Admin: Users -->
+  <div class="section" id="adminUsersSection" style="display:none;">
+    <h3>Admin: Users</h3>
+    <div class="grid">
+      <div class="card">
+        <strong>Create User</strong>
+        <div class="row" style="margin-top:8px;">
+          <input id="u_email" placeholder="Email" />
+          <input id="u_password" placeholder="Password" type="password" />
+          <select id="u_role">
+            <option value="student">student</option>
+            <option value="admin">admin</option>
+          </select>
+          <select id="u_student_id">
+            <option value="">(bind to student_id?)</option>
+          </select>
+          <button onclick="adminCreateUser()">Create</button>
+        </div>
+        <p class="muted">Bind a student account by selecting a <code>student_id</code>. Leave blank for admins.</p>
+      </div>
+
+      <div class="card">
+        <strong>All Users</strong>
+        <table id="usersTable" style="margin-top:8px;">
+          <thead>
+            <tr>
+              <th>#</th><th>Email</th><th>Role</th><th>Student ID</th><th>Created</th><th>Actions</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Admin: Audit Logs -->
+  <div class="section" id="adminAuditSection" style="display:none;">
+    <h3>Admin: Audit Logs</h3>
+    <table id="auditTable">
+      <thead>
+        <tr>
+          <th>When</th><th>Actor</th><th>Role</th><th>Action</th><th>Target</th><th>Details</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+  </div>
 
   <script>
-    let editingId = null; // null = Add mode; number = Update mode
+    // ======== State & helpers ========
+    let token = localStorage.getItem("token");
+    let role  = localStorage.getItem("role");
+    let debounceTimer = null;
+    let editingId = null;
+
     const errorBox = document.getElementById("msgError");
     const successBox = document.getElementById("msgSuccess");
     const searchInput = document.getElementById("search");
-    let debounceTimer = null;
 
     function showError(msg) {
       errorBox.textContent = msg;
@@ -77,22 +174,110 @@
       setTimeout(() => { successBox.style.display = "none"; }, 1800);
     }
 
-    async function fetchStudents(q = "") {
-      try {
-        const url = q ? `${API}?q=${encodeURIComponent(q)}` : API;
-        const res = await fetch(url);
-        if (!res.ok) throw new Error(`GET failed: ${res.status} ${res.statusText}`);
-        const data = await res.json();
-        renderTable(data);
-      } catch (e) {
-        showError(e.message);
-        console.error(e);
-      }
+    function escapeHtml(str) {
+      return String(str ?? "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+    }
+    function escapeAttr(str) { return escapeHtml(str).replace(/"/g, "&quot;"); }
+    function decodeHtml(str) { const t = document.createElement("textarea"); t.innerHTML = str; return t.value; }
+
+    function authHeaders() { return token ? { "Authorization": `Bearer ${token}` } : {}; }
+
+    async function apiFetch(url, options = {}) {
+      const headers = { ...(options.headers || {}), ...authHeaders() };
+      // include credentials so refresh cookie can be exchanged
+      return fetch(url, { ...options, headers, credentials: "include" });
     }
 
-    function renderTable(students) {
+    async function refreshTokenIfNeeded(res) {
+      if (res.status !== 401) return false;
+      const r = await fetch(`${API}/auth/refresh`, { method: "POST", credentials: "include" });
+      const data = await r.json().catch(() => ({}));
+      if (!r.ok) return false;
+      token = data.token; role = data.role;
+      localStorage.setItem("token", token);
+      localStorage.setItem("role", role);
+      return true;
+    }
+
+    async function withAutoRefresh(fn) {
+      let res = await fn();
+      if (await refreshTokenIfNeeded(res)) res = await fn();
+      return res;
+    }
+
+    function updateRoleUI() {
+      const isAuthed = Boolean(token && role);
+      document.getElementById("btnLogout").style.display = isAuthed ? "inline-block" : "none";
+      document.getElementById("studentFormRow").style.display = role === "admin" ? "flex" : "none";
+      document.getElementById("adminUsersSection").style.display = role === "admin" ? "block" : "none";
+      document.getElementById("adminAuditSection").style.display = role === "admin" ? "block" : "none";
+    }
+
+    // ======== Auth ========
+    async function login() {
+      try {
+        const email = document.getElementById("email").value.trim();
+        const password = document.getElementById("password").value.trim();
+        const res = await fetch(`${API}/auth/login`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          credentials: "include",
+          body: JSON.stringify({ email, password })
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.error || "Login failed");
+        token = data.token; role = data.role;
+        localStorage.setItem("token", token);
+        localStorage.setItem("role", role);
+        document.getElementById("whoami").textContent = `Signed in as ${email} (${role})`;
+        showSuccess("Logged in.");
+        refreshView();
+      } catch (e) { showError(e.message); }
+    }
+
+    async function logout() {
+      try { await apiFetch(`${API}/auth/logout`, { method: "POST" }); } catch {}
+      token = null; role = null;
+      localStorage.removeItem("token");
+      localStorage.removeItem("role");
+      document.getElementById("whoami").textContent = "";
+      showSuccess("Logged out.");
+      refreshView();
+    }
+
+    // ======== Students ========
+    async function fetchStudents(q = "") {
+      try {
+        if (!token) { showError("Please log in."); return; }
+        if (role === "student") {
+          const res = await withAutoRefresh(() => apiFetch(`${API}/me/grades`));
+          const data = await res.json();
+          if (!res.ok) throw new Error(data.error || res.statusText);
+          renderStudents([data]);
+        } else {
+          const url = q ? `${API}/students?q=${encodeURIComponent(q)}` : `${API}/students`;
+          const res = await withAutoRefresh(() => apiFetch(url));
+          const payload = await res.json();
+          if (!res.ok) throw new Error(payload.error || res.statusText);
+          renderStudents(payload.data ?? payload);
+        }
+      } catch (e) { showError(e.message); }
+    }
+
+    function renderStudents(students) {
       const tbody = document.querySelector("#studentsTable tbody");
       tbody.innerHTML = "";
+      if (!students.length) {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `<td colspan="6" class="muted">No students found.</td>`;
+        tbody.appendChild(tr);
+        return;
+      }
       students.forEach((s) => {
         const tr = document.createElement("tr");
         tr.innerHTML = `
@@ -102,53 +287,46 @@
           <td>${escapeHtml(s.year)}</td>
           <td>${escapeHtml(s.grade)}</td>
           <td class="actions">
-            <button onclick="startEdit(${s.id}, '${escapeAttr(s.name)}', '${escapeAttr(s.course)}', '${escapeAttr(s.year)}', '${escapeAttr(s.grade)}')">Edit</button>
-            <button onclick="deleteStudent(${s.id})">Delete</button>
-          </td>
-        `;
+            ${role === "admin" ? `
+              <button onclick="startEdit(${s.id}, '${escapeAttr(s.name)}', '${escapeAttr(s.course)}', '${escapeAttr(s.year)}', '${escapeAttr(s.grade)}')">Edit</button>
+              <button onclick="deleteStudent(${s.id})">Delete</button>
+            ` : `<span class="muted">View only</span>`}
+          </td>`;
         tbody.appendChild(tr);
       });
     }
 
-    // Form submit (Add or Update)
     async function submitForm() {
       const name   = document.getElementById("name").value.trim();
       const course = document.getElementById("course").value.trim();
       const year   = document.getElementById("year").value.trim();
       const grade  = document.getElementById("grade").value.trim();
 
-      if (!name || !course || !year || !grade) {
-        showError("Please fill in all fields.");
-        return;
-      }
+      if (!name || !course || !year || !grade) { showError("Please fill in all fields."); return; }
+      if (role !== "admin") { showError("Admins only."); return; }
 
       try {
-        let res, data;
+        let res;
         if (editingId === null) {
-          // Add
-          res = await fetch(API, {
+          res = await withAutoRefresh(() => apiFetch(`${API}/students`, {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name, course, year, grade })
-          });
+          }));
         } else {
-          // Update
-          res = await fetch(`${API}/${editingId}`, {
+          res = await withAutoRefresh(() => apiFetch(`${API}/students/${editingId}`, {
             method: "PUT",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ name, course, year, grade })
-          });
+          }));
         }
-        data = await res.json().catch(() => ({}));
+        const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
-
         showSuccess(editingId === null ? "Student added." : "Student updated.");
         resetForm();
         fetchStudents(searchInput.value.trim());
-      } catch (e) {
-        showError(e.message);
-        console.error(e);
-      }
+        if (role === "admin") await loadStudentsForBinding();
+      } catch (e) { showError(e.message); }
     }
 
     function startEdit(id, name, course, year, grade) {
@@ -173,52 +351,172 @@
     }
 
     async function deleteStudent(id) {
+      if (role !== "admin") { showError("Admins only."); return; }
       if (!confirm("Delete this student?")) return;
       try {
-        const res = await fetch(`${API}/${id}`, { method: "DELETE" });
+        const res = await withAutoRefresh(() => apiFetch(`${API}/students/${id}`, { method: "DELETE" }));
         const data = await res.json().catch(() => ({}));
         if (!res.ok) throw new Error(data.error || res.statusText);
         showSuccess("Student deleted.");
         if (editingId === id) resetForm();
         fetchStudents(searchInput.value.trim());
-      } catch (e) {
-        showError(e.message);
-        console.error(e);
-      }
+        await loadStudentsForBinding();
+      } catch (e) { showError(e.message); }
     }
 
-    // Search handlers (debounced)
+    // Search
     searchInput.addEventListener("input", () => {
       clearTimeout(debounceTimer);
-      debounceTimer = setTimeout(() => {
-        const q = searchInput.value.trim();
-        fetchStudents(q);
-      }, 250);
+      debounceTimer = setTimeout(() => { fetchStudents(searchInput.value.trim()); }, 250);
     });
+    function clearSearch() { searchInput.value = ""; fetchStudents(""); }
 
-    function clearSearch() {
-      searchInput.value = "";
-      fetchStudents("");
+    // ======== Admin: Users ========
+    async function adminCreateUser() {
+      if (role !== "admin") { showError("Admins only."); return; }
+      const email = document.getElementById("u_email").value.trim();
+      const password = document.getElementById("u_password").value.trim();
+      const urole = document.getElementById("u_role").value;
+      const sidRaw = document.getElementById("u_student_id").value;
+      const student_id = sidRaw ? Number(sidRaw) : null;
+      try {
+        const res = await withAutoRefresh(() => apiFetch(`${API}/admin/users`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password, role: urole, student_id })
+        }));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        showSuccess("User created.");
+        document.getElementById("u_email").value = "";
+        document.getElementById("u_password").value = "";
+        document.getElementById("u_role").value = "student";
+        document.getElementById("u_student_id").value = "";
+        await loadUsers();
+      } catch (e) { showError(e.message); }
     }
 
-    // Helpers
-    function escapeHtml(str) {
-      return String(str ?? "")
-        .replace(/&/g, "&amp;")
-        .replace(/</g, "&lt;")
-        .replace(/>/g, "&gt;")
-        .replace(/"/g, "&quot;")
-        .replace(/'/g, "&#039;");
-    }
-    function escapeAttr(str) { return escapeHtml(str).replace(/"/g, "&quot;"); }
-    function decodeHtml(str) {
-      const txt = document.createElement("textarea");
-      txt.innerHTML = str;
-      return txt.value;
+    async function adminUpdateUser(id, roleValue, studentIdValue, newPasswordValue) {
+      if (role !== "admin") { showError("Admins only."); return; }
+      const body = {};
+      if (roleValue) body.role = roleValue;
+      if (studentIdValue !== undefined) body.student_id = studentIdValue === "" ? null : Number(studentIdValue);
+      if (newPasswordValue) body.password = newPasswordValue;
+
+      try {
+        const res = await withAutoRefresh(() => apiFetch(`${API}/admin/users/${id}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body)
+        }));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        showSuccess("User updated.");
+        await loadUsers();
+      } catch (e) { showError(e.message); }
     }
 
-    // Initial load
-    fetchStudents();
+    async function adminDeleteUser(id) {
+      if (role !== "admin") { showError("Admins only."); return; }
+      if (!confirm("Delete this user?")) return;
+      try {
+        const res = await withAutoRefresh(() => apiFetch(`${API}/admin/users/${id}`, { method: "DELETE" }));
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || res.statusText);
+        showSuccess("User deleted.");
+        await loadUsers();
+      } catch (e) { showError(e.message); }
+    }
+
+    async function loadUsers() {
+      if (role !== "admin") return;
+      const res = await withAutoRefresh(() => apiFetch(`${API}/admin/users`));
+      const users = await res.json();
+      if (!res.ok) { showError(users.error || res.statusText); return; }
+
+      const tbody = document.querySelector("#usersTable tbody");
+      tbody.innerHTML = "";
+      users.forEach(u => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${u.id}</td>
+          <td>${escapeHtml(u.email)}</td>
+          <td>
+            <select id="role_${u.id}">
+              <option value="student" ${u.role==="student"?"selected":""}>student</option>
+              <option value="admin" ${u.role==="admin"?"selected":""}>admin</option>
+            </select>
+          </td>
+          <td><input id="sid_${u.id}" placeholder="student_id" value="${u.student_id ?? ""}" style="width:90px;" /></td>
+          <td>${new Date(u.created_at).toLocaleString()}</td>
+          <td class="actions">
+            <input id="pw_${u.id}" type="password" placeholder="new password" />
+            <button onclick="adminUpdateUser(${u.id}, document.getElementById('role_${u.id}').value, document.getElementById('sid_${u.id}').value, document.getElementById('pw_${u.id}').value)">Save</button>
+            <button onclick="adminDeleteUser(${u.id})">Delete</button>
+          </td>`;
+        tbody.appendChild(tr);
+      });
+    }
+
+    async function loadStudentsForBinding() {
+      if (role !== "admin") return;
+      const select = document.getElementById("u_student_id");
+      const res = await withAutoRefresh(() => apiFetch(`${API}/students?limit=200&page=1`));
+      const payload = await res.json();
+      if (!res.ok) return;
+      const list = payload.data || [];
+      select.innerHTML = `<option value="">(bind to student_id?)</option>`;
+      list.forEach(s => {
+        const opt = document.createElement("option");
+        opt.value = s.id;
+        opt.textContent = `${s.id} — ${s.name} (${s.course})`;
+        select.appendChild(opt);
+      });
+    }
+
+    // ======== Audit Logs ========
+    async function loadAuditLogs() {
+      if (role !== "admin") return;
+      const res = await withAutoRefresh(() => apiFetch(`${API}/admin/audit-logs?limit=50&page=1`));
+      const payload = await res.json();
+      if (!res.ok) { showError(payload.error || res.statusText); return; }
+      const rows = payload.data || [];
+      const tbody = document.querySelector("#auditTable tbody");
+      tbody.innerHTML = "";
+      rows.forEach(r => {
+        const tr = document.createElement("tr");
+        tr.innerHTML = `
+          <td>${escapeHtml(r.occurred_at)}</td>
+          <td>${r.actor_user_id ?? ""}</td>
+          <td>${escapeHtml(r.actor_role ?? "")}</td>
+          <td>${escapeHtml(r.action)}</td>
+          <td>${escapeHtml(`${r.target_type ?? ""}:${r.target_id ?? ""}`)}</td>
+          <td><pre style="white-space:pre-wrap; margin:0;">${escapeHtml(r.details ? JSON.stringify(r.details) : "")}</pre></td>
+        `;
+        tbody.appendChild(tr);
+      });
+    }
+
+    // ======== Orchestration ========
+    function refreshView() {
+      updateRoleUI();
+      fetchStudents(searchInput.value.trim());
+      loadUsers();
+      loadAuditLogs();
+      loadStudentsForBinding();
+    }
+
+    // init
+    (function init(){
+      if (token && role) {
+        document.getElementById("btnLogout").style.display = "inline-block";
+        document.getElementById("whoami").textContent = `Signed in (${role})`;
+      }
+      // mark env pill (just cosmetic)
+      const envPill = document.getElementById("envPill");
+      envPill.textContent = location.hostname === "localhost" ? "Local" : "Remote";
+      refreshView();
+    })();
   </script>
 </body>
 </html>
