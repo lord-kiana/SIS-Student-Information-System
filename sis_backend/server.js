@@ -1,10 +1,10 @@
-// server.js
 require("dotenv").config();
 
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
 const cookieParser = require("cookie-parser");
+const rateLimit = require("express-rate-limit");
 const { z } = require("zod");
 const jwt = require("jsonwebtoken");
 const bcrypt = require("bcrypt");
@@ -14,15 +14,24 @@ const mysql = require("mysql2/promise");
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* ---------- Security & Middleware ---------- */
+/* ---------- App & Security ---------- */
+app.set("trust proxy", 1); // correct client IPs behind proxies
+
 const originList = (process.env.CORS_ORIGINS || "")
-  .split(",")
-  .map(s => s.trim())
-  .filter(Boolean);
+  .split(",").map(s => s.trim()).filter(Boolean);
 
 app.use(helmet({
   crossOriginResourcePolicy: { policy: "cross-origin" },
+  contentSecurityPolicy: process.env.NODE_ENV === "production" ? {
+    useDefaults: true,
+    directives: {
+      "default-src": ["'self'"],
+      "script-src": ["'self'"],
+      "connect-src": ["'self'", ...(process.env.CLIENT_ORIGIN ? [process.env.CLIENT_ORIGIN] : [])],
+    }
+  } : false
 }));
+
 app.use(cors({
   origin: (origin, cb) => {
     if (!origin) return cb(null, true);
@@ -33,6 +42,7 @@ app.use(cors({
   methods: ["GET","POST","PUT","DELETE","OPTIONS"],
   allowedHeaders: ["Content-Type","Authorization"]
 }));
+
 app.use(express.json());
 app.use(cookieParser());
 
@@ -47,12 +57,12 @@ const pool = mysql.createPool({
   connectionLimit: 10
 });
 
-/* ---------- Schemas (match your VARCHAR columns) ---------- */
+/* ---------- Schemas ---------- */
 const StudentSchema = z.object({
   name: z.string().trim().min(1).max(100),
   course: z.string().trim().min(1).max(100),
-  year: z.string().trim().min(1).max(20),   // keep as string
-  grade: z.string().trim().min(1).max(10),  // keep as string
+  year: z.enum(["1","2","3","4","5"]),            // stricter
+  grade: z.enum(["A","B","C","D","F","INC"]),     // adjust to your scale
 });
 
 const AuthSchema = z.object({
@@ -89,11 +99,25 @@ function sha256(value) {
 
 const cookieOptions = {
   httpOnly: true,
-  sameSite: "lax",
+  sameSite: process.env.COOKIE_SAMESITE || "lax",
   secure: String(process.env.COOKIE_SECURE) === "true",
   domain: process.env.COOKIE_DOMAIN || undefined,
   path: "/",
 };
+
+// double-submit CSRF helper: issue refresh cookie + non-HttpOnly CSRF
+function setRefreshCookies(res, refreshToken) {
+  res.cookie("rt", refreshToken, { ...cookieOptions, maxAge: REFRESH_TTL_DAYS*24*60*60*1000 });
+  res.cookie("csrf_refresh", sha256(refreshToken).slice(0, 24), { ...cookieOptions, httpOnly: false, maxAge: REFRESH_TTL_DAYS*24*60*60*1000 });
+}
+
+// CSRF check for refresh endpoint
+function requireCsrf(req, res, next) {
+  const header = req.get("x-csrf-refresh");
+  const cookie = req.cookies?.csrf_refresh;
+  if (!header || !cookie || header !== cookie) return res.status(403).json({ error: "CSRF" });
+  next();
+}
 
 /* ---------- Audit helper ---------- */
 async function audit(req, { action, targetType, targetId, details }) {
@@ -142,11 +166,25 @@ function requireAdminOrSelfByParamId(paramName = "id") {
   };
 }
 
+/* ---------- Rate limiting ---------- */
+const loginLimiter = rateLimit({
+  windowMs: 10 * 60 * 1000,
+  max: 20,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+const refreshLimiter = rateLimit({
+  windowMs: 5 * 60 * 1000,
+  max: 60,
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 /* ---------- Routes ---------- */
 app.get("/", (_req, res) => res.send("Welcome to the Student Information System API"));
 
 /* --- Auth: Login (access + refresh cookie) --- */
-app.post("/api/auth/login", async (req, res) => {
+app.post("/api/auth/login", loginLimiter, async (req, res) => {
   const parse = AuthSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: "Invalid credentials" });
 
@@ -169,13 +207,13 @@ app.post("/api/auth/login", async (req, res) => {
     [user.id, tokenHash, expiresAt, (req.get("user-agent")||"").slice(0,255), (req.ip||"").slice(0,45)]
   );
 
-  res.cookie("rt", refreshToken, { ...cookieOptions, maxAge: REFRESH_TTL_DAYS*24*60*60*1000 });
+  setRefreshCookies(res, refreshToken);
   await audit(req, { action: "AUTH_LOGIN", targetType: "user", targetId: user.id, details: { email } });
   res.json({ token: accessToken, role: user.role });
 });
 
-/* --- Auth: Refresh (rotation) --- */
-app.post("/api/auth/refresh", async (req, res) => {
+/* --- Auth: Refresh (rotation + CSRF) --- */
+app.post("/api/auth/refresh", refreshLimiter, requireCsrf, async (req, res) => {
   const refreshToken = req.cookies?.rt;
   if (!refreshToken) return res.status(401).json({ error: "Missing refresh token" });
 
@@ -187,6 +225,7 @@ app.post("/api/auth/refresh", async (req, res) => {
     if (!record || new Date(record.expires_at) < new Date())
       return res.status(401).json({ error: "Refresh token expired/revoked" });
 
+    // rotate
     await pool.query("UPDATE refresh_tokens SET revoked_at=NOW() WHERE id=?", [record.id]);
 
     const newRefresh = signRefreshToken({ uid: decoded.uid });
@@ -201,26 +240,31 @@ app.post("/api/auth/refresh", async (req, res) => {
     const u = urows[0];
     const accessToken = signAccessToken({ uid: u.id, role: u.role, studentId: u.student_id });
 
-    res.cookie("rt", newRefresh, { ...cookieOptions, maxAge: REFRESH_TTL_DAYS*24*60*60*1000 });
+    setRefreshCookies(res, newRefresh);
     res.json({ token: accessToken, role: u.role });
   } catch {
     return res.status(401).json({ error: "Invalid refresh token" });
   }
 });
 
-/* --- Auth: Logout --- */
-app.post("/api/auth/logout", authenticate, async (req, res) => {
-  const refreshToken = req.cookies?.rt;
-  if (refreshToken) {
-    const tokenHash = sha256(refreshToken);
-    await pool.query("UPDATE refresh_tokens SET revoked_at=NOW() WHERE token_hash=?", [tokenHash]);
+/* --- Auth: Logout (idempotent) --- */
+app.post("/api/auth/logout", async (req, res) => {
+  try {
+    const refreshToken = req.cookies?.rt;
+    if (refreshToken) {
+      const tokenHash = sha256(refreshToken);
+      await pool.query("UPDATE refresh_tokens SET revoked_at=NOW() WHERE token_hash=?", [tokenHash]);
+    }
+    res.clearCookie("rt", { ...cookieOptions, maxAge: 0 });
+    res.clearCookie("csrf_refresh", { ...cookieOptions, httpOnly: false, maxAge: 0 });
+    await audit(req, { action: "AUTH_LOGOUT", targetType: "user", targetId: req.user?.uid });
+    return res.json({ success: true });
+  } catch {
+    return res.json({ success: true });
   }
-  res.clearCookie("rt", { ...cookieOptions, maxAge: 0 });
-  await audit(req, { action: "AUTH_LOGOUT", targetType: "user", targetId: req.user.uid });
-  res.json({ success: true });
 });
 
-/* --- Health --- */
+/* --- Health (auth-protected internal) --- */
 app.get("/api/health", authenticate, async (_req, res) => {
   try { await pool.query("SELECT 1"); res.json({ ok: true }); }
   catch { res.status(500).json({ ok: false }); }
@@ -304,6 +348,16 @@ app.post("/api/admin/users", authenticate, requireAdmin, async (req, res) => {
   if (!parse.success) return res.status(400).json({ error: parse.error.issues[0].message });
   const { email, password, role, student_id } = parse.data;
 
+  // enforce consistent role/binding
+  if (role === "student" && !student_id) return res.status(400).json({ error: "student_id is required for student role" });
+  if (role === "admin" && student_id)   return res.status(400).json({ error: "admin accounts cannot be bound to a student_id" });
+
+  // verify student exists when provided
+  if (student_id) {
+    const [s] = await pool.query("SELECT id FROM students WHERE id=?", [student_id]);
+    if (!s[0]) return res.status(404).json({ error: "student_id not found" });
+  }
+
   const hash = await bcrypt.hash(password, 10);
   try {
     const [r] = await pool.query(
@@ -322,6 +376,18 @@ app.put("/api/admin/users/:id", authenticate, requireAdmin, async (req, res) => 
   const id = Number(req.params.id);
   const parse = UpdateUserSchema.safeParse(req.body);
   if (!parse.success) return res.status(400).json({ error: parse.error.issues[0].message });
+
+  // enforce rules if fields provided
+  if (parse.data.role === "admin" && Object.prototype.hasOwnProperty.call(parse.data, "student_id") && parse.data.student_id) {
+    return res.status(400).json({ error: "admin accounts cannot be bound to a student_id" });
+  }
+  if (parse.data.role === "student" && Object.prototype.hasOwnProperty.call(parse.data, "student_id") && parse.data.student_id == null) {
+    return res.status(400).json({ error: "student_id is required for student role" });
+  }
+  if (Object.prototype.hasOwnProperty.call(parse.data, "student_id") && parse.data.student_id) {
+    const [s] = await pool.query("SELECT id FROM students WHERE id=?", [parse.data.student_id]);
+    if (!s[0]) return res.status(404).json({ error: "student_id not found" });
+  }
 
   const fields = [];
   const params = [];
