@@ -1,0 +1,22 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SIS | Redirect</title>
+  <script>
+    window.onload = function() {
+      const user = JSON.parse(localStorage.getItem("loggedInUser"));
+      if (!user) {
+        window.location.href = "./pages/login.html";
+      } else if (user.role === "admin") {
+        window.location.href = "./pages/dashboard_admin.html";
+      } else {
+        window.location.href = "./pages/dashboard_student.html";
+      }
+    };
+  </script>
+</head>
+<body>
+  <p>Redirecting...</p>
+</body>
+</html>

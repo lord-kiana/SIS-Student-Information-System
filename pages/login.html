@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>SIS | Login</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      background: #f5f7fb;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+    }
+    .container {
+      background: white;
+      padding: 30px;
+      border-radius: 10px;
+      box-shadow: 0 0 10px rgba(0,0,0,0.1);
+      width: 320px;
+      text-align: center;
+    }
+    input, button {
+      width: 100%;
+      padding: 10px;
+      margin: 6px 0;
+      border-radius: 5px;
+      border: 1px solid #ddd;
+      font-size: 14px;
+    }
+    button {
+      background-color: #1a73e8;
+      color: white;
+      border: none;
+      cursor: pointer;
+    }
+    button:hover {
+      background-color: #1558b0;
+    }
+    .toggle {
+      color: #1a73e8;
+      cursor: pointer;
+      font-size: 13px;
+    }
+    .error {
+      color: red;
+      font-size: 13px;
+      margin-top: 8px;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2 id="formTitle">Login</h2>
+    <input type="email" id="email" placeholder="Email" />
+    <input type="password" id="password" placeholder="Password" />
+    <button onclick="handleAuth()">Login</button>
+    <p class="toggle" onclick="toggleMode()">Don’t have an account? Sign up</p>
+    <p id="errorMsg" class="error"></p>
+  </div>
+
+  <script>
+    const API = "http://localhost:3000/api";
+    let mode = "login"; // or "register"
+
+    function toggleMode() {
+      const title = document.getElementById("formTitle");
+      const btn = document.querySelector("button");
+      const toggleText = document.querySelector(".toggle");
+      const err = document.getElementById("errorMsg");
+      err.textContent = "";
+
+      if (mode === "login") {
+        mode = "register";
+        title.textContent = "Sign Up";
+        btn.textContent = "Sign Up";
+        toggleText.textContent = "Already have an account? Login";
+      } else {
+        mode = "login";
+        title.textContent = "Login";
+        btn.textContent = "Login";
+        toggleText.textContent = "Don’t have an account? Sign up";
+      }
+    }
+
+    async function handleAuth() {
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value.trim();
+      const errorMsg = document.getElementById("errorMsg");
+      errorMsg.textContent = "";
+
+      if (!email || !password) {
+        errorMsg.textContent = "Please fill in all fields.";
+        return;
+      }
+
+      try {
+        const endpoint = mode === "login" ? "/login" : "/register";
+        const res = await fetch(API + endpoint, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, password })
+        });
+
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Request failed");
+
+        if (mode === "login") {
+          localStorage.setItem("loggedInUser", JSON.stringify(data.user));
+          if (data.user.role === "admin") {
+            window.location.href = "./dashboard_admin.html";
+          } else {
+            window.location.href = "./dashboard_student.html";
+          }
+        } else {
+          alert("Account created successfully! You can now log in.");
+          toggleMode();
+        }
+      } catch (err) {
+        errorMsg.textContent = err.message;
+      }
+    }
+  </script>
+</body>
+</html>
